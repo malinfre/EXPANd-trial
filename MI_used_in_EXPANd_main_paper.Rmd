@@ -1,0 +1,352 @@
+---
+title: "MI_by_group"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read dataset to be used for imputation
+```{r}
+
+setwd("P:/Franzen_group/BETA-PD Neuroplasticitet/BEARBETAD DATA/STORA RCT/RCT_main_paper")
+main_rct <- read.csv("main_paper_rct_sel_col_long.csv")
+
+```
+
+## Create dfs
+```{r}
+
+library(mise)
+mise(vars = FALSE, figs = FALSE, console = FALSE, pkgs = TRUE)
+library(dplyr)
+
+
+## Rescaling bdnf and acc_steps_per_day since mice suggests that due to the very different scale - done using the pre mean and pre sd value
+
+## BDNF pro
+# Save pre mean and pre
+mu <- mean(main_rct$bdnf_pro[main_rct$time == 0], na.rm = TRUE)    
+sd <- sd(main_rct$bdnf_pro[main_rct$time == 0], na.rm = TRUE)
+# Scale
+x <- t((t((main_rct$bdnf_pro)) - mu) / sd) # z-score-normalize
+main_rct$bdnf_pro_z <- as.numeric(x)
+
+
+## BDNF m
+# Save pre mean and pre
+mu <- mean(main_rct$bdnf_m[main_rct$time == 0], na.rm = TRUE)    
+sd <- sd(main_rct$bdnf_m[main_rct$time == 0], na.rm = TRUE)
+## Scale
+y <- t((t((main_rct$bdnf_m)) - mu) / sd) # z-score-normalize
+main_rct$bdnf_m_z <- as.numeric(y)
+
+
+## Steps per day
+# Save pre mean and pre
+mu <- mean(main_rct$acc_m_steps_day[main_rct$time == 0], na.rm = TRUE)    
+sd <- sd(main_rct$acc_m_steps_day[main_rct$time == 0], na.rm = TRUE)
+## Scale
+z <- t((t((main_rct$acc_m_steps_day)) - mu) / sd) # z-score-normalize
+main_rct$acc_m_steps_day_z <- as.numeric(z)
+
+
+
+
+## Selecting columns to use 
+main_rct_1 <- main_rct %>%
+  select(
+    study_id,
+    time,
+    group,
+    moca_tot,
+    d_sex,
+    d_age,
+    presence_percent,
+    mb_tot,
+    gait_velocity,
+    gait_step_len_l,
+    gait_step_len_r,
+    had_anx_tot,
+    had_dep_tot,
+    eq5d_vas,
+    abc_tot,
+    pdq39_si_tot,
+    ac_dbc,
+    d_frandin_grimby,
+    cog_composite_ex_func,
+    bdnf_m_z,
+    bdnf_pro_z,
+    updrs_3_tot,
+    updrs_tot,
+    walk12_tot,
+    acc_m_steps_day_z
+  )
+
+
+## Take away "NP" from study_id since its has to be numerical to use as cluster variable in MI
+main_rct_1$study_id <- gsub("NP", "", main_rct_1$study_id)
+
+
+## Make a new group variable w names "A" to 1 and B to 0
+main_rct_1$group_factor <- main_rct_1$group 
+main_rct_1$group <- if_else(main_rct_1$group == "A", 1, 0)
+
+main_rct_1 <- main_rct_1 %>% 
+  mutate(
+    study_id = as.numeric(study_id),
+    group = as.numeric(group),
+    group_factor = as.factor(group_factor),
+    time = as.numeric(time),
+    gait_step_len_m_l_r = (gait_step_len_l + gait_step_len_r) /2
+  ) %>% 
+  select(
+    - gait_step_len_l,
+    - gait_step_len_r
+  )
+
+```
+
+
+## Check correlations between variables to enable selection of predictors
+```{r}
+
+library(dplyr)
+
+main_rct_1_pre <- main_rct_1 %>% 
+  filter(
+    time == 0
+  ) %>%
+  select(
+    "mb_tot",
+    "moca_tot",
+    "abc_tot",
+    "walk12_tot",
+    "gait_velocity",
+    "had_anx_tot",
+    "had_dep_tot",
+    "eq5d_vas",
+    "abc_tot",
+    "pdq39_si_tot",
+    "ac_dbc",
+    "cog_composite_ex_func",
+    "updrs_3_tot",
+    "updrs_tot",
+    "walk12_tot",
+    "gait_step_len_m_l_r",
+    "acc_m_steps_day_z",
+    "bdnf_pro_z",
+    "bdnf_m_z",
+    "d_frandin_grimby"
+  )
+
+cor_rct_pre <- cor(main_rct_1_pre, method = "pearson", use = "complete.obs")
+
+cor_rct_pre_df <- as.data.frame(cor_rct_pre)
+
+# Round all values to 2 decimals
+cor_rct_pre_df <- round(cor_rct_pre_df, 2)
+
+
+cor_rct_pre_df <- cor_rct_pre_df %>%
+  rename(   
+    "1.Mini-BESTest" = "mb_tot",
+    "2.MOCA" = "moca_tot",
+    "3.ABC" = "abc_tot",
+    "4.Walk12" = "walk12_tot",
+    "5.Gait speed" = "gait_velocity",
+    "6.HADS anx" = "had_anx_tot",
+    "7.HADS dep" = "had_dep_tot",
+    "8.EQ5D" = "eq5d_vas",
+    "9.PDQ-39" = "pdq39_si_tot",
+    "10.Voice int." = "ac_dbc",
+    "11.Ex. func." = "cog_composite_ex_func",
+    "12.UPDRS III" = "updrs_3_tot",
+    "13.UPDRS tot." = "updrs_tot",
+    "14.Step len." = "gait_step_len_m_l_r",
+    "15.Steps/day" = "acc_m_steps_day_z",
+    "16.proBDNF" = "bdnf_pro_z",
+    "17.mBDNF" = "bdnf_m_z",
+    "18.Frandin-Grimby" = "d_frandin_grimby"
+    )
+    
+cor_rct_pre_df$outcome <- colnames(cor_rct_pre_df)
+
+## Only keep numbers in column names for saving space
+colnames(cor_rct_pre_df) <- c(1:19)
+
+
+# Make outcome column the first
+cor_rct_pre_df <- cor_rct_pre_df[ , c(19, 1:18)]
+
+
+```
+
+```{r}
+
+# Write out correlation matrix to word doc
+library(rtf)
+
+setwd("C:/Users/malifr/KI.SE/GRP_neuroplasticity_main paper - General/results_info_outputs")
+
+output<-"correlation_matrix_behaviour_bdnf.doc"
+rtf <- RTF(output, height = 11, font.size = 8, omi = c(1, 1, 1, 1))
+
+addTable(rtf, as.data.frame(cor_rct_pre_df))
+
+addParagraph(rtf, "Table x: Correlation matrix of the behavioural and bdnf outcomes")
+
+done(rtf)
+
+```
+
+
+## Impute by group
+```{r}
+
+library(dplyr)
+library(mice)
+library(miceadds)
+
+## Get initial mice object to then extract method and predictor matrix to fill w values
+ini <- mice(main_rct_1, maxit = 0)
+
+meth <- ini$meth
+meth["mb_tot"] <- "bygroup"
+meth["gait_velocity"] <- "bygroup"
+meth["gait_step_len_m_l_r"] <- "bygroup"
+meth["had_dep_tot"] <- "bygroup"
+meth["had_anx_tot"] <- "bygroup"
+meth["eq5d_vas"] <- "bygroup"
+meth["abc_tot"] <- "bygroup"
+meth["pdq39_si_tot"] <- "bygroup"
+meth["ac_dbc"] <- "bygroup"
+meth["d_frandin_grimby"] <- "bygroup"
+meth["cog_composite_ex_func"] <- "bygroup"
+meth["bdnf_m_z"] <- "bygroup"
+meth["bdnf_pro_z"] <- "bygroup"
+meth["updrs_3_tot"] <- "bygroup"
+meth["updrs_tot"] <- "bygroup"
+meth["walk12_tot"] <- "bygroup"
+meth["acc_m_steps_day_z"] <- "bygroup"
+meth
+
+group <- list(
+  "mb_tot" = "group", "gait_velocity" = "group", "gait_step_len_m_l_r" = "group", "had_dep_tot" = "group", "had_anx_tot" = "group", "eq5d_vas" = "group", "abc_tot" = "group", "pdq39_si_tot" = "group", "ac_dbc" = "group", "d_frandin_grimby" = "group",      "cog_composite_ex_func" = "group", "bdnf_m_z" = "group", "bdnf_pro_z" = "group", "updrs_3_tot" = "group", "updrs_tot" = "group",      "walk12_tot" = "group", "acc_m_steps_day_z" = "group", "gait_step_len_m_l_r" = "group"
+  )
+
+imputationFunction <- list(
+  "mb_tot" = "2l.pmm", "gait_velocity" = "2l.pmm", "gait_step_len_m_l_r" = "2l.pmm", "had_dep_tot" = "2l.pmm", "had_anx_tot" = "2l.pmm", "eq5d_vas" = "2l.pmm", "abc_tot" = "2l.pmm", "pdq39_si_tot" = "2l.pmm", "ac_dbc" = "2l.pmm", "d_frandin_grimby" = "2l.pmm", "cog_composite_ex_func" = "2l.pmm", "bdnf_m_z" = "2l.pmm", "bdnf_pro_z" = "2l.pmm", "updrs_3_tot" = "2l.pmm", "updrs_tot" = "2l.pmm", "walk12_tot" = "2l.pmm", "acc_m_steps_day_z" = "2l.pmm", "gait_step_len_m_l_r" = "2l.pmm"
+  )
+
+
+# Extract and fix predictor matrix
+pred <- ini$pred
+
+# Set study_id to cluster variable for all variables and the other variables to not be predictors (as default)
+pred[ , "study_id" ] <- -2
+
+pred[ ,"ac_dbc"] <- 0
+pred[ ,"bdnf_m_z"] <- 0
+pred[ ,"bdnf_pro_z"] <- 0
+pred[ ,"d_frandin_grimby"] <- 0
+pred[ ,"moca_tot"] <- 0
+
+
+## Create sets of predictors for variables to be imputed based on correlations (setting the ones to not be predictors to 0)
+pred["mb_tot", 
+     c("had_anx_tot", "acc_m_steps_day_z"
+ )] <- 0
+
+pred["gait_velocity", 
+     c("cog_composite_ex_func", "had_anx_tot", "pdq39_si_tot" )] <- 0
+
+pred["had_anx_tot", 
+     c("mb_tot", "cog_composite_ex_func", "gait_velocity", "acc_m_steps_day_z", "updrs_3_tot", "gait_step_len_m_l_r" )] <- 0
+
+pred["had_dep_tot", 
+     c("cog_composite_ex_func", "acc_m_steps_day_z", "updrs_3_tot", "mb_tot" )] <- 0
+
+pred["eq5d_vas", 
+     c("cog_composite_ex_func", "updrs_3_tot", "acc_m_steps_day_z" )] <- 0
+
+pred["abc_tot", 
+     c("cog_composite_ex_func", "updrs_3_tot", "acc_m_steps_day_z" )] <- 0
+
+pred["pdq39_si_tot", 
+     c("cog_composite_ex_func", "gait_velocity", "acc_m_steps_day_z", "updrs_3_tot", "gait_step_len_m_l_r" )] <- 0
+
+pred["ac_dbc", 
+     c("mb_tot", "abc_tot", "walk12_tot", "cog_composite_ex_func", "gait_velocity", "acc_m_steps_day_z", "updrs_3_tot", "gait_step_len_m_l_r", "had_anx_tot", "had_dep_tot", "pdq39_si_tot", "eq5d_vas","updrs_tot" )] <- 0
+
+pred["d_frandin_grimby", 
+     c("abc_tot", "walk12_tot", "updrs_3_tot", "updrs_tot", "had_anx_tot", "had_dep_tot", "pdq39_si_tot", "eq5d_vas" )] <- 0
+
+
+pred["cog_composite_ex_func", 
+     c("abc_tot", "gait_velocity", "acc_m_steps_day_z", "gait_step_len_m_l_r", "had_anx_tot", "pdq39_si_tot", "eq5d_vas" )] <- 0
+
+pred["cog_composite_ex_func", 
+     c("moca_tot" )] <- 1
+
+
+pred["updrs_3_tot", 
+     c("had_anx_tot", "had_dep_tot", "acc_m_steps_day_z", "pdq39_si_tot", "eq5d_vas" )] <- 0
+
+pred["updrs_tot", 
+     c("mb_tot", "acc_m_steps_day_z", "cog_composite_ex_func", "gait_velocity", "had_anx_tot")] <- 0
+
+pred["walk12_tot", 
+     c( "acc_m_steps_day_z", "cog_composite_ex_func"  )] <- 0
+
+pred["acc_m_steps_day_z", 
+     c("updrs_3_tot", "cog_composite_ex_func", "had_anx_tot", "had_dep_tot",  "pdq39_si_tot" )] <- 0
+
+pred["gait_step_len_m_l_r", 
+     c("cog_composite_ex_func", "had_anx_tot" )] <- 0
+
+pred["gait_step_len_m_l_r", 
+     c("d_frandin_grimby" )] <- 1
+
+pred["bdnf_pro_z", 
+     c("abc_tot", "walk12_tot", "cog_composite_ex_func", "d_frandin_grimby", "gait_velocity", "acc_m_steps_day_z", "gait_step_len_m_l_r", "had_anx_tot", "pdq39_si_tot", "eq5d_vas", "updrs_tot" )] <- 0
+
+pred["bdnf_m_z", 
+     c("mb_tot", "abc_tot", "walk12_tot", "cog_composite_ex_func", "d_frandin_grimby", "gait_velocity", "acc_m_steps_day_z", "gait_step_len_m_l_r", "had_anx_tot", "had_dep_tot", "pdq39_si_tot", "eq5d_vas", "updrs_3_tot" )] <- 0
+
+
+## Imputation
+imp_main_corr_z <- mice(main_rct_1, method = meth, predictorMatrix = pred,
+            m = 30, maxit = 10, group = group, imputationFunction = imputationFunction, seed = 789)
+
+
+## Look at first data set
+imp_look_corr_z <- complete(imp_main_corr_z, 1)
+imp_look_corr_z
+
+
+## Write imputed data out
+setwd("P:/Franzen_group/BETA-PD Neuroplasticitet/BEARBETAD DATA/STORA RCT/RCT_main_paper")
+
+saveRDS(imp_main_corr_z, "imputation_object_main_rct_corr_z.rds") 
+
+
+```
+
+
+## Read in imputed data sets and look at diagnsotic plots
+```{r}
+
+library(miceadds)
+
+setwd("P:/Franzen_group/BETA-PD Neuroplasticitet/BEARBETAD DATA/STORA RCT/RCT_main_paper")
+
+imp_main <- readRDS("imputation_object_main_rct.rds") 
+
+densityplot(imp_main)
+
+plot(imp_main)
+
+
+```
