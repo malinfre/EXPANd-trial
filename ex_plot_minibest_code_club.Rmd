@@ -1,0 +1,60 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(Rmisc)
+library(ggplot2)
+library(emmeans)
+library(gridExtra)
+library("cowplot")
+
+## Read in the data
+setwd("P:/Franzen_group/BETA-PD Neuroplasticitet/BEARBETAD DATA/STORA RCT/RCT_main_paper")
+main_rct <- read.csv("main_paper_rct_sel_col_long.csv")
+
+# Create jitter in wide direction
+jitter <- position_dodge(width = 0.08)
+
+
+## Mini-BESTest
+# OBS! Group = 1 = A = HiBalance
+# Extract the estimated marginal means from the analyses on the imputed data and make into df
+emm_mb = emmeans::emmeans(fit_mb_tot_imp, specs = "group", by="time")
+emm_mb_df = as.data.frame(emm_mb)
+
+# Make group variable values to letters A (1/HiBalance) and B(0/Active control) 
+emm_mb_df$group <- ifelse(emm_mb_df$group == 0, "B", "A")
+
+#Extract the betas and p values to place in the plots
+mb_tot_lme[4, c(2,6)]
+caption_mb <- ("ß = 0·4, p = 0·568")
+
+# Plot
+mb <- ggplot(emm_mb_df, aes(time, emmean, colour = factor(group))) +
+  geom_point(size = 3.0, position = jitter) +
+  geom_errorbar(aes(ymin = emmean-SE, ymax = emmean+SE), width=.1, size = 1.4, position = jitter) +
+  geom_line(size = 1.1, position = jitter) +
+  ggtitle("   Mini-BESTest" ) +
+  scale_x_continuous(breaks=c(0:1), labels=c("Pre", "Post")) + 
+  scale_y_continuous(breaks = c(19:23), limits = c(19, 23.5)) +
+  scale_color_manual(labels = c("HiBalance", "Active control" ), values =  c("#1f78b4", "#b2df8a")) +
+  theme(
+      panel.background = element_blank(),
+      plot.title = element_text(size = 11, face = "bold"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.text.x = element_text(size = 10),
+      axis.text.y = element_text(size = 10),
+      legend.position = "none",
+      axis.line = element_line(colour = "grey")
+      ) +
+  annotate(geom = "text", x = -0.05, y = 23.5, label = caption_mb, size = 4, hjust = 0)
+mb
+```
